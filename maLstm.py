@@ -69,68 +69,67 @@ questions_cols = ['question1', 'question2']
 
 X_train, X_validation, Y_train, Y_validation = train_test_split(train_df, y_train, test_size=validation_size)
 
-# Split to dicts
+# Siamese网络是孪生网络，因此分左右两个同时输入的数据集
 X_train = {'left': X_train.question1, 'right': X_train.question2}
 X_validation = {'left': X_validation.question1, 'right': X_validation.question2}
 X_test = {'left': test_df.question1, 'right': test_df.question2}
 
-# Convert labels to their numpy representations
+# 从pandas取出其numpy形式的表示
 Y_train = Y_train.values
 Y_validation = Y_validation.values
 
-# Zero padding
+# 使用0填充成一样的长度
 for dataset, side in itertools.product([X_train, X_validation], ['left', 'right']):
     dataset[side] = tf.keras.preprocessing.sequence.pad_sequences(dataset[side], maxlen=max_seq_length)
 
-# Make sure everything is ok
+# 检查下是否正确
 assert X_train['left'].shape == X_train['right'].shape
 assert len(X_train['left']) == len(Y_train)
 
 # 构建模型
-# Model variables
 n_hidden = 30
 gradient_clipping_norm = 1.25
-batch_size = 64
-n_epoch = 5
+batch_size = 80
+n_epoch = 5  # 第一轮就拟合了
 
 
 def exponent_neg_manhattan_distance(left, right):
-    ''' Helper function for the similarity estimate of the LSTMs outputs'''
+    """度量LSTM输出向量相似度"""
     return K.exp(-K.sum(K.abs(left - right), axis=1, keepdims=True))
 
 
-# The visible layer
+# 输入层，即可见层
 left_input = keras.Input(shape=(max_seq_length,), dtype='float32')
 right_input = keras.Input(shape=(max_seq_length,), dtype='float32')
 
-# 使用已定义好的embedding amtrix
+# 使用已定义好的embedding matrix
 embedding_layer = keras.layers.Embedding(len(embeddings), embedding_dim,
                                          embeddings_initializer=tf.keras.initializers.Constant(embeddings),
                                          input_length=max_seq_length, trainable=False)
 
-# Embedded version of the inputs
+# 对输入层进行Embedding，即每个汉字转成128维嵌入向量
 encoded_left = embedding_layer(left_input)
 encoded_right = embedding_layer(right_input)
 
-# Since this is a siamese network, both sides share the same LSTM
+# Siamese网络，因此两边共享LSTM参数
 shared_lstm = keras.layers.LSTM(n_hidden)
 
 left_output = shared_lstm(encoded_left)
 right_output = shared_lstm(encoded_right)
 
-# Calculates the distance as defined by the MaLSTM model
+# 计算由MaLSTM模型所定义的句子向量间的距离
 malstm_distance = keras.layers.Lambda(function=lambda x: exponent_neg_manhattan_distance(x[0], x[1]),
                                       output_shape=lambda x: (x[0][0], 1))([left_output, right_output])
 
-# Pack it all up into a model
+# 组装成最终的模型
 malstm = keras.models.Model([left_input, right_input], [malstm_distance])
 
-# Adadelta optimizer, with gradient clipping by norm
+# 使用Adadelta优化器
 optimizer = keras.optimizers.Adadelta(clipnorm=gradient_clipping_norm)
 
 malstm.compile(loss='mean_squared_error', optimizer=optimizer, metrics=['accuracy'])
 
-# Start training
+# 开始训练
 training_start_time = time()
 
 malstm_trained = malstm.fit([X_train['left'], X_train['right']], Y_train, batch_size=batch_size, epochs=n_epoch,
@@ -139,8 +138,8 @@ malstm_trained = malstm.fit([X_train['left'], X_train['right']], Y_train, batch_
 print("Training time finished.\n{} epochs in {}".format(n_epoch,
                                                         datetime.timedelta(seconds=time() - training_start_time)))
 
-# 画出过程
-# Plot accuracy
+# 画出训练过程
+# 画正确率
 plt.plot(malstm_trained.history['accuracy'])
 plt.plot(malstm_trained.history['val_accuracy'])
 plt.title('Model Accuracy')
@@ -149,7 +148,7 @@ plt.xlabel('Epoch')
 plt.legend(['Train', 'Validation'], loc='upper left')
 plt.show()
 
-# Plot loss
+# 画Loss
 plt.plot(malstm_trained.history['loss'])
 plt.plot(malstm_trained.history['val_loss'])
 plt.title('Model Loss')
