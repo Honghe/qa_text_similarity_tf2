@@ -7,6 +7,8 @@ Ref: https://github.com/eliorc/Medium/blob/master/MaLSTM.ipynb
 # Model
 Siamese Network，use LSTM.
 
+![image-20200603224505643](images/model.png)
+
 # Data Set
 
 2018 蚂蚁金服NLP智能客服比赛，数据集大小200k条。
